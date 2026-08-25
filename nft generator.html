@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NFT Batch Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0d0d12;
+    color: #f0f0f5;
+    padding: 16px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.sub { color: #999; font-size: 14px; margin-top: 0; margin-bottom: 16px; }
+  .controls {
+    background: #1a1a22;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  label { font-size: 13px; color: #bbb; display: block; margin-bottom: 6px; }
+  input[type="number"] {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    background: #0d0d12;
+    color: #fff;
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+  button {
+    width: 100%;
+    padding: 14px;
+    border-radius: 10px;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .btn-primary { background: linear-gradient(135deg, #ffb347, #ff7b00); color: #1a1a22; }
+  .btn-secondary { background: #2a2a35; color: #fff; }
+  .btn-secondary:disabled { opacity: 0.4; }
+  #status { font-size: 13px; color: #ffb347; min-height: 18px; margin: 8px 0; }
+  #progress-bar-bg {
+    width: 100%; height: 6px; background: #2a2a35; border-radius: 3px; overflow: hidden; margin-bottom: 12px;
+  }
+  #progress-bar { height: 100%; width: 0%; background: #ff7b00; transition: width 0.2s; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  .card {
+    background: #1a1a22;
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+  }
+  .card img {
+    width: 100%;
+    aspect-ratio: 1/1;
+    object-fit: cover;
+    display: block;
+    background: #2a2a35;
+  }
+  .card .label {
+    font-size: 10px;
+    color: #999;
+    padding: 4px 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card .spinner {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #666; font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<h1>🔥 Flame Character NFT Batch Generator</h1>
+<p class="sub">Powered by Pollinations.ai — free, no key needed. Runs right in this browser.</p>
+
+<div class="controls">
+  <label for="count">Number of images to generate (up to 555)</label>
+  <input type="number" id="count" value="25" min="1" max="555">
+  <button class="btn-primary" id="genBtn" onclick="startGeneration()">Generate Images</button>
+  <button class="btn-secondary" id="zipBtn" onclick="downloadZip()" disabled>Download All as ZIP</button>
+  <div id="progress-bar-bg"><div id="progress-bar"></div></div>
+  <div id="status"></div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+// ---- Trait matrix reverse-engineered from the reference NFT set ----
+const COLORS = [
+  "golden yellow flame", "pure white flame", "electric blue flame",
+  "deep purple flame", "blood red flame", "toxic green flame",
+  "cyan flame", "orange-red flame", "teal flame", "black flame with red cracks"
+];
+const EXPRESSIONS = [
+  "calm confident smile", "sly smirk", "serene closed eyes",
+  "sharp intense gaze", "relaxed half-smile"
+];
+const OUTFITS = [
+  "bare chest with gold necklace and gem pendant",
+  "black oversized streetwear hoodie with graphic print",
+  "white and navy techwear jacket with chain accents",
+  "traditional monk robe with sash",
+  "fur-lined winter parka",
+  "flowing desert robe with headwear",
+  "black graphic t-shirt with backpack straps",
+  "silk kimono-style jacket with dragon embroidery"
+];
+const LOCATIONS = [
+  "ancient temple courtyard with lanterns",
+  "neon-lit cyberpunk Tokyo street at night",
+  "Times Square New York at sunset",
+  "snowy Moscow street with Russian architecture",
+  "Egyptian desert with pyramids at sunset",
+  "Mediterranean coastal village with cafes",
+  "cherry blossom street with a red bridge",
+  "quiet Japanese suburb street with power lines",
+  "aurora borealis over snowy mountains",
+  "dark ancient ruins glowing with embers",
+  "rainy rooftop parking garage at dusk overlooking a city skyline"
+];
+
+// Seeded shuffle so the same 555 combos come out in the same order every time
+function seededRandom(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+
+function buildCombos(limit) {
+  const combos = [];
+  for (const c of COLORS)
+    for (const e of EXPRESSIONS)
+      for (const o of OUTFITS)
+        for (const l of LOCATIONS)
+          combos.push([c, e, o, l]);
+
+  const rand = seededRandom(42);
+  for (let i = combos.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [combos[i], combos[j]] = [combos[j], combos[i]];
+  }
+  return combos.slice(0, limit);
+}
+
+function buildPrompt([color, expression, outfit, location]) {
+  return `${color}-haired humanoid character with glowing cracked skin texture, ${expression}, wearing ${outfit}, standing in ${location}, anime digital art style, detailed illustration, portrait composition, gem pendant necklace, high detail`;
+}
+
+let generatedImages = []; // {blob, filename}
+
+async function fetchImageBlob(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error("fetch failed: " + resp.status);
+  return await resp.blob();
+}
+
+async function startGeneration() {
+  const count = Math.max(1, Math.min(555, parseInt(document.getElementById('count').value) || 25));
+  const genBtn = document.getElementById('genBtn');
+  const zipBtn = document.getElementById('zipBtn');
+  const status = document.getElementById('status');
+  const progressBar = document.getElementById('progress-bar');
+  const grid = document.getElementById('grid');
+
+  genBtn.disabled = true;
+  zipBtn.disabled = true;
+  grid.innerHTML = '';
+  generatedImages = [];
+
+  const combos = buildCombos(count);
+
+  for (let i = 0; i < combos.length; i++) {
+    const prompt = buildPrompt(combos[i]);
+    const seed = 1000 + i;
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
+    const filename = `nft_${String(i + 1).padStart(3, '0')}.png`;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="spinner">#${i + 1}...</div>`;
+    grid.appendChild(card);
+
+    status.textContent = `Generating ${i + 1} of ${combos.length}...`;
+    progressBar.style.width = `${((i + 1) / combos.length) * 100}%`;
+
+    try {
+      const blob = await fetchImageBlob(url);
+      generatedImages.push({ blob, filename });
+      const objUrl = URL.createObjectURL(blob);
+      card.innerHTML = `<img src="${objUrl}"><div class="label">${filename}</div>`;
+    } catch (err) {
+      card.innerHTML = `<div class="spinner" style="color:#f66">failed</div>`;
+      console.error(err);
+    }
+
+    // Small delay to be polite to the free API
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  status.textContent = `Done. ${generatedImages.length} of ${combos.length} images generated.`;
+  genBtn.disabled = false;
+  zipBtn.disabled = generatedImages.length === 0;
+}
+
+async function downloadZip() {
+  const status = document.getElementById('status');
+  status.textContent = 'Zipping...';
+  const zip = new JSZip();
+  for (const { blob, filename } of generatedImages) {
+    zip.file(filename, blob);
+  }
+  const content = await zip.generateAsync({ type: 'blob' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(content);
+  link.download = 'nft_batch.zip';
+  link.click();
+  status.textContent = `Zip downloaded: ${generatedImages.length} images.`;
+}
+</script>
+
+</body>
+</html>
